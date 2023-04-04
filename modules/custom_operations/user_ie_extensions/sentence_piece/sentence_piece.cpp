@@ -83,9 +83,9 @@ SentencepieceTokenizer::SentencepieceTokenizer(const ov::OutputVector& args, con
 void SentencepieceTokenizer::validate_and_infer_types() {
     // The operation SentencepieceTokenizerExtensionOp has three outputs: sparse indices, sparse values
     // and dense shape
-    set_output_type(0, element::i32, PartialShape{ Dimension(), Dimension(2) });  // FIXME: change to i64 after CPU fix
+    set_output_type(0, element::i64, PartialShape{ Dimension(), Dimension(2) });
     set_output_type(1, element::i32, PartialShape{ Dimension() });
-    set_output_type(2, element::i32, PartialShape{ Dimension(2) });  // FIXME: change to i64 after CPU fix
+    set_output_type(2, element::i64, PartialShape{ Dimension(2) });
 }
 
 bool SentencepieceTokenizer::visit_attributes(ov::AttributeVisitor& visitor) {
@@ -98,40 +98,40 @@ bool SentencepieceTokenizer::visit_attributes(ov::AttributeVisitor& visitor) {
 }
 
 bool SentencepieceTokenizer::evaluate(ov::TensorVector& outputs, const ov::TensorVector& inputs) const {
-    std::vector<int32_t> sparse_indices;
+    std::vector<int64_t> sparse_indices;
     std::vector<int32_t> sparse_values;
-    std::vector<int32_t> sparse_dense_shape;
+    std::vector<int64_t> sparse_dense_shape;
 
     const uint8_t* strings = inputs[1].data<uint8_t>();
-    auto batch_size = *reinterpret_cast<const int32_t*>(strings + 0);
+    auto batch_size = static_cast<int64_t>(*reinterpret_cast<const int32_t*>(strings + 0));
     auto begin_ids = reinterpret_cast<const int32_t*>(strings + 4);
     auto end_ids = begin_ids + 1;
     auto data = strings + 4 + 4 + 4 * batch_size;
 
     size_t max_token_id = 0;
-    for (size_t batch_ind = 0; batch_ind < batch_size; ++batch_ind) {
+    for (int64_t batch_ind = 0; batch_ind < batch_size; ++batch_ind) {
         auto begin_ind = begin_ids[batch_ind];
         auto end_ind = end_ids[batch_ind];
         std::vector<int32_t> ids;
         std::string sentence(data + begin_ind, data + end_ind);
         CHECK_OK(m_sp->SampleEncode(sentence, m_nbest_size, m_alpha, &ids));
         // put into resulted vectors
-        for (size_t token_id = 0; token_id < ids.size(); ++token_id) {
-            sparse_indices.push_back(static_cast<int32_t>(batch_ind));
-            sparse_indices.push_back(static_cast<int32_t>(token_id));
-            sparse_values.push_back(static_cast<int32_t>(ids[token_id]));
+        for (int64_t token_id = 0; token_id < ids.size(); ++token_id) {
+            sparse_indices.push_back(batch_ind);
+            sparse_indices.push_back(token_id);
+            sparse_values.push_back(ids[token_id]);
         }
         max_token_id = max_token_id < ids.size() ? ids.size() : max_token_id;
     }
-    sparse_dense_shape.push_back(static_cast<int32_t>(batch_size));
-    sparse_dense_shape.push_back(static_cast<int32_t>(max_token_id));
+    sparse_dense_shape.push_back(batch_size);
+    sparse_dense_shape.push_back(static_cast<int64_t>(max_token_id));
 
     outputs[0].set_shape({ sparse_indices.size() / 2, 2 });
-    memcpy(outputs[0].data(), sparse_indices.data(), sizeof(int32_t) * sparse_indices.size());
+    memcpy(outputs[0].data(), sparse_indices.data(), sizeof(int64_t) * sparse_indices.size());
     outputs[1].set_shape({ sparse_values.size() });
     memcpy(outputs[1].data(), sparse_values.data(), sizeof(int32_t) * sparse_values.size());
     outputs[2].set_shape({ 2 });
-    memcpy(outputs[2].data(), sparse_dense_shape.data(), sizeof(int32_t) * sparse_dense_shape.size());
+    memcpy(outputs[2].data(), sparse_dense_shape.data(), sizeof(int64_t) * sparse_dense_shape.size());
     return true;
 }
 
